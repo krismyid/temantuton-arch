@@ -1805,7 +1805,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       explanation TEXT NOT NULL,
       difficulty TEXT DEFAULT 'medium',
       source_section TEXT,
-      source_page INTEGER,  -- Page number from PDF for reference
+      source_page TEXT,  -- UT module page (e.g., "1.12", "2.5") from HALAMAN marker
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -1916,20 +1916,20 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     - Queue processing job
   - Implement processing pipeline:
     - Use `pdf-parse` or `opendataloader` to extract text
-    - **CRITICAL**: Preserve page numbers as metadata in Markdown:
-      - Format: `<!-- PAGE 5 -->`
-      - Each page break marked, content organized accordingly
+    - **CRITICAL**: Preserve module-relative page numbers (UT format: X.Y)
+      - Each page has footer with module/page indicator (e.g., "1.3", "1.12", "2.5")
+      - Extract page number from footer/text, insert as metadata marker
+      - Format: `<!-- HALAMAN 1.12 -->`
       - Example:
         ```markdown
-        # Chapter 1: Pengantar Hukum
+        <!-- HALAMAN 1.1 -->
+        # Pengertian Hukum Dagang dan Kepailitan
 
-        <!-- PAGE 1 -->
         Hukum adalah...
 
-        <!-- PAGE 2 -->
-        Sejarah hukum Indonesia...
+        <!-- HALAMAN 1.12 -->
+        ## Latihan
 
-        <!-- PAGE 15: Latihan Soal -->
         1. Apa yang dimaksud dengan...
         ```
     - Convert to Markdown format
@@ -1963,7 +1963,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   **Acceptance Criteria**:
   - [ ] PDF uploads to R2
   - [ ] Text extracted and converted to Markdown
-  - [ ] **Page numbers preserved as `<!-- PAGE N -->` markers**
+  - [ ] **Page numbers preserved as `<!-- HALAMAN X.Y -->` markers (UT module format)**
   - [ ] Subject status updated correctly
   - [ ] Markdown stored in R2
 
@@ -2007,13 +2007,13 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     - Use regex or LLM to identify section
     - If no section found, return error with guidance
   - Generate questions using databyte-m1:
-    - **CRITICAL**: Preserve page references from markdown (marked with `<!-- PAGE N -->`)
+    - **CRITICAL**: Preserve page references from markdown (marked with `<!-- HALAMAN X.Y -->`)
     - Prompt template:
       ```
       Dari teks berikut (bagian latihan soal), buat 5 soal pilihan ganda dalam Bahasa Indonesia dengan gaya 20 detik, tidak berbelit-belit.
 
-      FORMAT PENTING: Setiap soal HARUS menyertakan nomor halaman sumber dalam format: "page: N"
-      Contoh explanation: "Jawaban A benar karena... (page: 15)"
+      FORMAT PENTING: Setiap soal HARUS menyertakan nomor halaman sumber dari marker <!-- HALAMAN X.Y --> dalam format: "halaman: X.Y"
+      Contoh explanation: "Jawaban A benar karena... (halaman: 1.12)"
 
       Format output JSON:
       {
@@ -2022,9 +2022,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
             "question": "...",
             "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
             "correct_answer": "A",
-            "explanation": "Penjelasan singkat... (page: N)",
+            "explanation": "Penjelasan singkat... (halaman: 1.12)",
             "difficulty": "medium",
-            "source_page": N
+            "source_page": "1.12"
           }
         ]
       }
@@ -2090,8 +2090,8 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     Preconditions: Questions generated
     Steps:
       1. wrangler d1 execute DOJO_DB --command="SELECT explanation, source_page FROM questions"
-    Expected Result: Every explanation contains "(page: N)" and source_page is not null
-    Failure Indicators: Missing "(page: N)" in explanation, NULL source_page
+    Expected Result: Every explanation contains "(halaman: X.Y)" and source_page matches pattern like "1.12"
+    Failure Indicators: Missing "(halaman: X.Y)", NULL source_page, wrong format
     Evidence: .omo/evidence/task-23-page-ref.json
   ```
 
