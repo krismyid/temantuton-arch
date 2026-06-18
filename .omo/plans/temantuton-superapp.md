@@ -3083,6 +3083,91 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
+- [ ] 34. **Financial Dashboard**
+
+  **What to do**:
+  - Create financial overview page: `/admin/financial`
+  - Display metrics:
+    - **Current month earnings**: SUM(payments.amount) WHERE paid_at this month
+    - **Active subscriptions**: COUNT(subscriptions) WHERE status='active'
+    - **New users this month**: COUNT(users) WHERE created_at this month
+    - **Total users**: COUNT(users)
+    - **Revenue breakdown**: This month vs last month comparison
+  - Insights section:
+    - Month-over-month growth (%)
+    - Average revenue per subscriber
+    - Top subscription plan (6months vs 1year)
+    - Payment success rate
+    - Provider usage (Louvin vs QRIS.PW)
+  - Charts/visualizations:
+    - Revenue trend (last 6 months)
+    - Subscription growth trend
+    - Active vs expired subscriptions
+  - Export functionality:
+    - Export to CSV/Excel
+
+  **API endpoints**:
+  - `GET /api/admin/financial/summary` → Current month stats
+  - `GET /api/admin/financial/history?months=6` → Historical data
+  - `GET /api/admin/financial/export?format=csv` → Export data
+
+  **Must NOT do**:
+  - Display PII (user emails/names) in dashboard
+  - Include failed payments in revenue
+
+  **Recommended Agent Profile**:
+  - **Category**: `visual-engineering`
+  - **Skills**: [`typescript`, `next-js`, `tailwindcss`]
+  - `next-js`: Dashboard pages
+  - `tailwindcss`: Charts and layout
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 4)
+  - **Blocks**: None
+  - **Blocked By**: Tasks 30, 32
+
+  **References**:
+  - None (simple dashboard)
+
+  **Acceptance Criteria**:
+  - [ ] Current month earnings displayed correctly
+  - [ ] Active subscription count accurate
+  - [ ] Month-over-month growth calculated
+  - [ ] Revenue trend chart displayed
+  - [ ] Export to CSV works
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Financial summary API
+    Tool: Bash (curl)
+    Preconditions: Payments and subscriptions exist
+    Steps:
+      1. curl "http://localhost:8787/api/admin/financial/summary"
+    Expected Result: JSON with current_month_revenue, active_subscriptions, etc.
+    Evidence: .omo/evidence/task-34-summary.json
+
+  Scenario: Revenue trend chart
+    Tool: Playwright
+    Preconditions: Admin logged in
+    Steps:
+      1. page.goto('http://localhost:3000/admin/financial')
+      2. Check for revenue trend chart
+    Expected Result: Chart displays last 6 months data
+    Evidence: .omo/evidence/task-34-chart.png
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-34-summary.json
+  - [ ] task-34-chart.png
+
+  **Commit**: YES
+  - Message: `feat(admin): add financial dashboard`
+  - Files: `dojo-worker/src/routes/admin/financial.ts`, `frontend/app/admin/financial/`
+  - Pre-commit: `npx tsc --noEmit`
+
+---
+
 ## Final Verification Wave
 
 - [ ] F1. **Plan Compliance Audit** — `oracle`
