@@ -2061,15 +2061,19 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       - type="combination": PILIH KOMBINASI (A, B, C, D) - soal型式 tentang 3 pernyataan
 
       PROPORSI:
-      - Buat TOTAL 60 SOAL
-      - type="single": ~73% (44 soal)
-      - type="combination": ~27% (16 soal)
+      - type="single": ~73%
+      - type="combination": ~27%
       - Proporsi mengikuti contoh-soal-uas.pdf
+
+      JUMLAH SOAL (berdasarkan Latihan Soal Formatif yang sudah ada):
+      - Jika Latihan Soal Formatif < 60 soal → generate 60 soal
+      - Jika Latihan Soal Formatif >= 60 soal → generate 80 soal
+      - Jika Latihan Soal Formatif >= 80 soal → generate 100 soal
 
       PENTING:
       - Ambil SEMUA "Latihan Soal Formatif" yang ada di modul sebagai referensi
       - BIKIN SOAL BARU yang berbeda dari yang sudah ada
-      - Jika Latihan Soal Formatif sudah ada <60, generate sisanya dari materi modul
+      - Generate sesuai jumlah berdasarkan proporsi 73%/27%
       - Penjelasan MAKSIMAL 250 kata
       - Langsung ke inti, tidak berbelit-belit
 
@@ -2107,9 +2111,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   - databyte-m1 API docs (user to provide)
 
   **Acceptance Criteria**:
-  - [ ] **Exactly 60 questions generated per subject**
+  - [ ] **Questions count based on existing Latihan Soal Formatif: 60/80/100**
   - [ ] Questions in Bahasa Indonesia
-  - [ ] **Both question types: ~44 single + ~16 combination (73%/27% proportion)**
+  - [ ] **Both question types: ~73% single + ~27% combination**
   - [ ] Correct JSON format
   - [ ] Questions saved to D1 with type field
   - [ ] Source attribution included
