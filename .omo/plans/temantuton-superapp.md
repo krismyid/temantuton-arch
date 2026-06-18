@@ -1800,8 +1800,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       subject_id TEXT REFERENCES subjects(id),
       question_text TEXT NOT NULL,
-      options TEXT NOT NULL,
-      correct_answer TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'single',  -- 'single' or 'combination'
+      options TEXT NOT NULL,  -- JSON array for single, array of statements for combination
+      correct_answer TEXT NOT NULL,  -- 'A','B','C','D' for single; 'A','B','C','D' for combination
       explanation TEXT NOT NULL,
       difficulty TEXT DEFAULT 'medium',
       source_section TEXT,
@@ -2015,7 +2016,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       Kamu adalah guru yang membuat soal latihan untuk mahasiswa.
 
       LANGKAH:
-      1. Baca SELURUH konten modul di bawah (semua section, bukan hanya latihan)
+      1. Baca SELURUH konten modul (semua section, bukan hanya latihan)
       2. Identifikasi section "Latihan", "Latihan Soal", atau soal-soal yang ada
       3. Buat pertanyaan baru BERDASARKAN materi dari section tersebut
       4. Tulis penjelasan yang merujuk ke halaman spesifik: "Jawaban A karena... (halaman: 1.12)"
@@ -2025,27 +2026,53 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
         "questions": [
           {
             "question": "Pertanyaan dalam Bahasa Indonesia...",
+            "type": "single",
             "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
             "correct_answer": "A",
             "explanation": "Penjelasan singkat... (halaman: 1.12)",
+            "difficulty": "medium",
+            "source_page": "1.12"
+          },
+          {
+            "question": "Pertanyaan dalam Bahasa Indonesia...",
+            "type": "combination",
+            "statements": [
+              "1) Pernyataan pertama...",
+              "2) Pernyataan kedua...",
+              "3) Pernyataan ketiga..."
+            ],
+            "options": [
+              "A. JIKA 1) DAN 2) BENAR",
+              "B. JIKA 1) DAN 3) BENAR",
+              "C. JIKA 2) DAN 3) BENAR",
+              "D. JIKA 1),2),DAN 3) SEMUANYA BENAR"
+            ],
+            "correct_answer": "B",
+            "explanation": "Jawaban B benar karena... (halaman: 1.12)",
             "difficulty": "medium",
             "source_page": "1.12"
           }
         ]
       }
 
+      TIPE SOAL:
+      - type="single": PILIH SALAH SATU (A, B, C, D) - pertanyaan biasa
+      - type="combination": PILIH KOMBINASI (A, B, C, D) - soal型式 tentang 3 pernyataan
+
       CATATAN:
       - Penjelasan MAKSIMAL 250 kata
       - Langsung ke inti, tidak berbelit-belit
+      - Campurkan type="single" dan type="combination" di setiap kuis
 
       SEMUA KONTEN MODUL:
       {full_markdown_content}
       ```
     - **IMPORTANT**: Load and send full markdown content to LLM (all sections for context)
+    - **IMPORTANT**: Mix both question types (single + combination) in each quiz
     - LLM should understand full material before generating questions from latihan section
     - Parse LLM response as JSON
     - Validate response format (must have `source_page` for each question)
-    - Save questions to D1 (include `source_page` column)
+    - Save questions to D1 (include `source_page` column, `type` field)
     - Update subject status='completed'
   - Implement retry logic (3 attempts on failure)
   - Source attribution:
@@ -2073,9 +2100,11 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   **Acceptance Criteria**:
   - [ ] Questions generated from Markdown
   - [ ] Questions in Bahasa Indonesia
+  - [ ] **Both question types generated: type="single" AND type="combination"**
   - [ ] Correct JSON format
-  - [ ] Questions saved to D1
+  - [ ] Questions saved to D1 with type field
   - [ ] Source attribution included
+  - [ ] Page references in explanations
 
   **QA Scenarios**:
 
@@ -2087,6 +2116,23 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       1. curl -X POST https://dojo-worker.workers.dev/api/admin/subjects/test-id/generate
     Expected Result: Questions created in D1
     Evidence: .omo/evidence/task-23-generate.json
+
+  Scenario: Both question types present
+    Tool: Bash (wrangler)
+    Preconditions: Questions generated
+    Steps:
+      1. wrangler d1 execute DOJO_DB --command="SELECT type, COUNT(*) as count FROM questions GROUP BY type"
+    Expected Result: Both 'single' and 'combination' types present
+    Failure Indicators: Only one type generated
+    Evidence: .omo/evidence/task-23-types.json
+
+  Scenario: Combination question has 3 statements
+    Tool: Bash (wrangler)
+    Preconditions: Questions with type='combination'
+    Steps:
+      1. wrangler d1 execute DOJO_DB --command="SELECT options FROM questions WHERE type='combination' LIMIT 1"
+    Expected Result: Options contains 3 statements (1), 2), 3))
+    Evidence: .omo/evidence/task-23-combination.json
 
   Scenario: Questions in Bahasa Indonesia
     Tool: Bash (curl)
@@ -2108,6 +2154,8 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
   **Evidence to Capture**:
   - [ ] task-23-generate.json
+  - [ ] task-23-types.json
+  - [ ] task-23-combination.json
   - [ ] task-23-language.json
   - [ ] task-23-page-ref.json
 
