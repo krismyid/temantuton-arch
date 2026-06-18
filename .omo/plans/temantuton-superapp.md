@@ -2034,6 +2034,10 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
         ]
       }
 
+      CATATAN:
+      - Penjelasan MAKSIMAL 250 kata
+      - Langsung ke inti, tidak berbelit-belit
+
       SEMUA KONTEN MODUL:
       {full_markdown_content}
       ```
