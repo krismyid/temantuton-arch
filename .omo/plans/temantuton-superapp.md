@@ -248,6 +248,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       email TEXT NOT NULL,
       display_name TEXT,
       role TEXT DEFAULT 'user',
+      is_banned INTEGER DEFAULT 0,
+      banned_at TEXT,
+      banned_reason TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -266,6 +269,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
     CREATE INDEX idx_users_entra_id ON users(entra_id);
     CREATE INDEX idx_users_email ON users(email);
+    CREATE INDEX idx_users_is_banned ON users(is_banned);
     CREATE INDEX idx_audit_user ON audit_log(user_id, created_at DESC);
     ```
   - Apply migrations via `wrangler d1 migrations apply AUTH_DB`
@@ -1849,6 +1853,48 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE pricing (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      plan_type TEXT NOT NULL,  -- '6months' or '1year'
+      price INTEGER NOT NULL,   -- Price in Rupiah
+      is_active INTEGER DEFAULT 1,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE subscriptions (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      user_id TEXT NOT NULL,
+      plan_type TEXT NOT NULL,      -- '6months' or '1year'
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      status TEXT DEFAULT 'active',  -- 'active', 'expired', 'cancelled'
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE payments (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      user_id TEXT NOT NULL,
+      subscription_id TEXT,
+      amount INTEGER NOT NULL,       -- Amount in Rupiah
+      plan_type TEXT NOT NULL,       -- '6months' or '1year'
+      provider TEXT NOT NULL,        -- 'louvin' or 'qris_pw'
+      qris_string TEXT,              -- QRIS string for payment
+      qris_image_url TEXT,           -- Generated QR code image URL
+      status TEXT DEFAULT 'pending', -- 'pending', 'paid', 'expired', 'failed'
+      expiry_time TEXT NOT NULL,     -- Payment deadline (e.g., 24 hours)
+      paid_at TEXT,                  -- When payment confirmed
+      external_id TEXT,              -- Payment provider reference
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX idx_subscriptions_user ON subscriptions(user_id);
+    CREATE INDEX idx_payments_user ON payments(user_id);
+    CREATE INDEX idx_payments_status ON payments(status);
+
+    -- Seed default pricing
+    INSERT INTO pricing (plan_type, price) VALUES ('6months', 60000);
+    INSERT INTO pricing (plan_type, price) VALUES ('1year', 100000);
+
     CREATE INDEX idx_questions_subject ON questions(subject_id);
     CREATE INDEX idx_progress_user ON user_progress(user_id);
     CREATE INDEX idx_xp_log_user ON xp_log(user_id, created_at DESC);
@@ -2609,6 +2655,430 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   **Commit**: YES
   - Message: `feat(frontend): add home dashboard and navigation`
   - Files: `frontend/app/page.tsx`, `frontend/components/Navigation.tsx`
+  - Pre-commit: `npx tsc --noEmit`
+
+---
+
+- [ ] 29. **Subscription & Access Control**
+
+  **What to do**:
+  - Implement access control logic:
+    - Free access: 1 year from `created_at` (registration date)
+    - After 1 year: require active subscription
+    - Check subscription on every protected page load
+  - Implement middleware to check access:
+    - `/dojo/*` - check subscription
+    - `/podcast/*` - check subscription (if premium content)
+  - If expired:
+    - Show subscription page: `/subscription`
+    - Display available plans with QRIS payment
+  - Admin can manually grant access (override)
+
+  **Must NOT do**:
+  - Block access before 1 year grace period
+  - Allow access without valid subscription after grace period
+
+  **Recommended Agent Profile**:
+  - **Category**: `deep`
+  - **Skills**: [`typescript`]
+  - `typescript`: Access control logic
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 4)
+  - **Blocks**: Task 30
+  - **Blocked By**: Tasks 21, 27
+
+  **References**:
+  - None (custom subscription logic)
+
+  **Acceptance Criteria**:
+  - [ ] User registered < 1 year ago → full access
+  - [ ] User registered >= 1 year ago with active subscription → full access
+  - [ ] User registered >= 1 year ago without subscription → blocked, show subscription page
+  - [ ] Admin can override subscription status
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: User within grace period
+    Tool: Bash (curl)
+    Preconditions: User registered 6 months ago
+    Steps:
+      1. curl http://localhost:3000/dojo -b '__Host-session=valid-session'
+    Expected Result: Access granted
+    Failure Indicators: Blocked, subscription page shown
+    Evidence: .omo/evidence/task-29-grace.json
+
+  Scenario: User past grace period, no subscription
+    Tool: Playwright
+    Preconditions: User registered 2 years ago, no subscription
+    Steps:
+      1. page.goto('http://localhost:3000/dojo')
+    Expected Result: Redirect to /subscription page
+    Evidence: .omo/evidence/task-29-expired.png
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-29-grace.json
+  - [ ] task-29-expired.png
+
+  **Commit**: YES
+  - Message: `feat(monetization): add subscription and access control`
+  - Files: `dojo-worker/src/middleware/subscription.ts`, `frontend/app/subscription/`
+  - Pre-commit: `npx tsc --noEmit`
+
+---
+
+- [ ] 30. **QRIS Payment Integration (Redundant)**
+
+  **What to do**:
+  - Implement payment creation endpoint: `POST /api/payments/create`
+    - Input: plan_type ('6months' or '1year')
+    - Fetch price from pricing table
+    - **PRIMARY: Louvin** (try first)
+      - Generate QRIS via Louvin API
+      - Create checkout, get QRIS string + image URL
+    - **SECONDARY: QRIS.PW** (fallback if Louvin fails)
+      - Generate QRIS via QRIS.PW API
+      - Get QRIS string + image URL
+    - Save payment record with status='pending', expiry_time (24 hours)
+    - Track which provider was used: `provider: 'louvin' | 'qris_pw'`
+    - Return: payment_id, qris_image_url, expiry_time, provider
+  - Implement health check for providers:
+    - `GET /api/payments/providers/health` → returns status of Louvin + QRIS.PW
+  - Implement payment webhook: `POST /api/payments/webhook/:provider`
+    - Separate webhook per provider: `/webhook/louvin`, `/webhook/qris_pw`
+    - Receive payment confirmation
+    - Update payment status to 'paid'
+    - Create subscription record
+  - Implement payment status check: `GET /api/payments/:id`
+    - Return current payment status
+  - **Redundancy logic**:
+    ```typescript
+    async function createPayment(plan_type) {
+      // Try Louvin first
+      try {
+        const louvin = await createLouvinPayment(plan_type);
+        return { provider: 'louvin', ...louvin };
+      } catch (e) {
+        console.error('Louvin failed:', e);
+      }
+
+      // Fallback to QRIS.PW
+      try {
+        const qrisPw = await createQrisPwPayment(plan_type);
+        return { provider: 'qris_pw', ...qrisPw };
+      } catch (e) {
+        console.error('QRIS.PW failed:', e);
+        throw new Error('All payment providers failed');
+      }
+    }
+    ```
+
+  **Must NOT do**:
+  - Store actual QRIS string long-term (expire after 24h)
+  - Create subscription before payment confirmed
+  - Hardcode single provider
+
+  **Recommended Agent Profile**:
+  - **Category**: `deep`
+  - **Skills**: [`typescript`, `payment`]
+  - `typescript`: API integration
+  - `payment`: Louvin + QRIS.PW integration
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 4)
+  - **Blocks**: Task 31
+  - **Blocked By**: Task 29
+
+  **References**:
+  - Louvin docs: `https://louvin.dev/`
+  - QRIS.PW docs: `https://qris.pw/`
+
+  **Acceptance Criteria**:
+  - [ ] Payment created with Louvin (primary)
+  - [ ] **Falls back to QRIS.PW if Louvin fails**
+  - [ ] Payment expires after 24 hours
+  - [ ] Separate webhooks per provider work
+  - [ ] Subscription created on successful payment
+  - [ ] Provider tracked in payment record
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Create payment with Louvin (primary)
+    Tool: Bash (curl)
+    Preconditions: User logged in, Louvin is up
+    Steps:
+      1. curl -X POST http://localhost:8787/api/payments/create -d '{"plan_type":"6months"}'
+    Expected Result: Payment created with provider='louvin'
+    Evidence: .omo/evidence/task-30-louvin.json
+
+  Scenario: Fallback to QRIS.PW when Louvin fails
+    Tool: Bash (curl)
+    Preconditions: Mock Louvin failure
+    Steps:
+      1. curl -X POST http://localhost:8787/api/payments/create -d '{"plan_type":"6months"}'
+    Expected Result: Payment created with provider='qris_pw'
+    Evidence: .omo/evidence/task-30-fallback.json
+
+  Scenario: Separate webhooks per provider
+    Tool: Bash (curl)
+    Preconditions: Payment created
+    Steps:
+      1. curl -X POST http://localhost:8787/api/payments/webhook/louvin -d '{"external_id":"xxx","status":"PAID"}'
+      2. curl -X POST http://localhost:8787/api/payments/webhook/qris_pw -d '{"external_id":"xxx","status":"PAID"}'
+    Expected Result: Both webhooks update payment status correctly
+    Evidence: .omo/evidence/task-30-webhook.json
+
+  Scenario: Payment expires after 24 hours
+    Tool: Bash (wrangler)
+    Preconditions: Payment created
+    Steps:
+      1. wrangler d1 execute DOJO_DB --command="SELECT expiry_time FROM payments ORDER BY created_at DESC LIMIT 1"
+    Expected Result: Expiry time is 24 hours from creation
+    Evidence: .omo/evidence/task-30-expiry.json
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-30-louvin.json
+  - [ ] task-30-fallback.json
+  - [ ] task-30-webhook.json
+  - [ ] task-30-expiry.json
+
+  **Commit**: YES
+  - Message: `feat(payment): add redundant QRIS (Louvin primary, QRIS.PW secondary)`
+  - Files: `dojo-worker/src/routes/payments.ts`, `dojo-worker/src/lib/providers/louvin.ts`, `dojo-worker/src/lib/providers/qris_pw.ts`
+  - Pre-commit: `npx tsc --noEmit`
+
+---
+
+- [ ] 31. **Subscription Page UI**
+
+  **What to do**:
+  - Create `/subscription` page:
+    - Show current subscription status
+    - Display available plans:
+      - 6 months: Rp 60.000
+      - 1 year: Rp 100.000
+    - Show QRIS payment option
+    - Display countdown if grace period expiring soon
+  - Create payment page: `/subscription/pay/:paymentId`
+    - Show QRIS code image
+    - Show expiry countdown timer
+    - "Check Payment" button
+    - "Already Paid?" button to refresh status
+  - On successful payment:
+    - Show success message
+    - Redirect to home/dojo
+  - Display pricing from database (admin configurable)
+
+  **Must NOT do**:
+  - Hardcode prices (fetch from API)
+
+  **Recommended Agent Profile**:
+  - **Category**: `visual-engineering`
+  - **Skills**: [`typescript`, `next-js`, `tailwindcss`]
+  - `next-js`: Pages
+  - `tailwindcss`: Styling
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 4)
+  - **Blocks**: None
+  - **Blocked By**: Tasks 29, 30
+
+  **References**:
+  - None (simple subscription UI)
+
+  **Acceptance Criteria**:
+  - [ ] Subscription page shows current status
+  - [ ] Plans displayed with correct prices from database
+  - [ ] Payment page shows QRIS image
+  - [ ] Countdown timer works
+  - [ ] Success redirect after payment
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Subscription page shows plans
+    Tool: Playwright
+    Preconditions: User without subscription
+    Steps:
+      1. page.goto('http://localhost:3000/subscription')
+    Expected Result: Shows 6 months and 1 year plans
+    Evidence: .omo/evidence/task-31-plans.png
+
+  Scenario: Payment page shows QRIS
+    Tool: Playwright
+    Preconditions: Payment created
+    Steps:
+      1. page.goto('http://localhost:3000/subscription/pay/test-payment-id')
+    Expected Result: QRIS image displayed, countdown timer visible
+    Evidence: .omo/evidence/task-31-qris.png
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-31-plans.png
+  - [ ] task-31-qris.png
+
+  **Commit**: YES
+  - Message: `feat(monetization): add subscription page UI`
+  - Files: `frontend/app/subscription/`
+  - Pre-commit: `npx tsc --noEmit`
+
+---
+
+- [ ] 32. **Admin User Management**
+
+  **What to do**:
+  - Implement user management endpoints:
+    - `GET /api/admin/users` - List all users (paginated)
+    - `GET /api/admin/users/search?q=email` - Search users by email
+    - `POST /api/admin/users/:id/ban` - Ban user (is_banned=1, set banned_reason)
+    - `POST /api/admin/users/:id/unban` - Unban user (is_banned=0)
+    - `GET /api/admin/users/:id` - Get user details with subscription status
+  - Add ban check in auth middleware:
+    - If user is_banned=1 → return 403 with message
+  - Log all ban/unban actions to audit_log
+
+  **Must NOT do**:
+  - Allow banned users to access any protected routes
+  - Allow banned users to login
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: [`typescript`]
+  - `typescript`: Admin endpoints
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 4)
+  - **Blocks**: Task 33
+  - **Blocked By**: Tasks 10, 27
+
+  **References**:
+  - None (standard admin CRUD)
+
+  **Acceptance Criteria**:
+  - [ ] Admin can search users by email
+  - [ ] Admin can ban user (is_banned=1)
+  - [ ] Admin can unban user (is_banned=0)
+  - [ ] Banned user receives 403 on login
+  - [ ] Ban/unban logged in audit_log
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Search users by email
+    Tool: Bash (curl)
+    Preconditions: Admin session
+    Steps:
+      1. curl "http://localhost:8787/api/admin/users/search?q=test@ecampus"
+    Expected Result: List of matching users
+    Evidence: .omo/evidence/task-32-search.json
+
+  Scenario: Ban user
+    Tool: Bash (curl)
+    Preconditions: Admin session, target user exists
+    Steps:
+      1. curl -X POST http://localhost:8787/api/admin/users/target-id/ban -d '{"reason":"Spam"}'
+    Expected Result: User is_banned=1
+    Evidence: .omo/evidence/task-32-ban.json
+
+  Scenario: Banned user blocked
+    Tool: Bash (curl)
+    Preconditions: Banned user session
+    Steps:
+      1. curl http://localhost:8787/user/me -b '__Host-session=banned-session'
+    Expected Result: 403 Forbidden
+    Evidence: .omo/evidence/task-32-blocked.json
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-32-search.json
+  - [ ] task-32-ban.json
+  - [ ] task-32-blocked.json
+
+  **Commit**: YES
+  - Message: `feat(admin): add user management (ban/unban)`
+  - Files: `auth-worker/src/routes/admin/users.ts`
+  - Pre-commit: `npx tsc --noEmit`
+
+---
+
+- [ ] 33. **Admin User Management UI + Pricing**
+
+  **What to do**:
+  - Create admin user management page: `/admin/users`
+    - User list with pagination
+    - Search bar (search by email)
+    - Columns: Email, Name, Role, Status, Registered Date, Subscription
+    - Actions: Ban button, Unban button, View details
+    - Status indicators: Active, Banned, Expired subscription
+  - Create user details modal/page:
+    - Full user info
+    - Subscription history
+    - Ban history from audit_log
+  - Create pricing management page: `/admin/pricing`
+    - List all plans with current prices
+    - Edit price (admin input)
+    - Activate/deactivate plan
+    - Changes saved to pricing table
+
+  **Must NOT do**:
+  - Allow non-admin access to admin pages
+
+  **Recommended Agent Profile**:
+  - **Category**: `visual-engineering`
+  - **Skills**: [`typescript`, `next-js`, `tailwindcss`]
+  - `next-js`: Admin pages
+  - `tailwindcss`: Tables and forms
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 4)
+  - **Blocks**: None
+  - **Blocked By**: Tasks 17, 32
+
+  **References**:
+  - None (standard admin UI)
+
+  **Acceptance Criteria**:
+  - [ ] User list with search works
+  - [ ] Ban/unban buttons functional
+  - [ ] Pricing page shows all plans
+  - [ ] Admin can edit pricing
+  - [ ] Non-admin cannot access admin pages
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Admin user list
+    Tool: Playwright
+    Preconditions: Admin logged in
+    Steps:
+      1. page.goto('http://localhost:3000/admin/users')
+      2. page.fill('input[name="search"]', 'test@ecampus')
+      3. page.click('button[type="submit"]')
+    Expected Result: Filtered user list
+    Evidence: .omo/evidence/task-33-users.png
+
+  Scenario: Admin can edit pricing
+    Tool: Playwright
+    Preconditions: Admin logged in
+    Steps:
+      1. page.goto('http://localhost:3000/admin/pricing')
+      2. page.fill('input[name="6months"]', '65000')
+      3. page.click('button[type="submit"]')
+    Expected Result: Price updated in database
+    Evidence: .omo/evidence/task-33-pricing.png
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-33-users.png
+  - [ ] task-33-pricing.png
+
+  **Commit**: YES
+  - Message: `feat(admin): add user management UI and pricing management`
+  - Files: `frontend/app/admin/users/`, `frontend/app/admin/pricing/`
   - Pre-commit: `npx tsc --noEmit`
 
 ---
