@@ -12,7 +12,7 @@
 > - **payment-worker**: QRIS payment (Louvin primary, QRIS.PW secondary)
 > - **Next.js PWA**: Mobile-web compatible, offline support (256MB audio cache)
 >
-> **Estimated Effort**: XL (36 tasks)
+> **Estimated Effort**: XL (37 tasks)
 > **Parallel Execution**: YES — 4 waves
 > **Critical Path**: Auth Worker → D1 Schema → SSO Middleware → Podcast/Dojo Features
 
@@ -261,6 +261,14 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE discord_links (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      user_id TEXT NOT NULL REFERENCES users(id),
+      discord_id TEXT UNIQUE NOT NULL,
+      discord_username TEXT,
+      linked_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT,
@@ -276,6 +284,8 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     CREATE INDEX idx_users_entra_id ON users(entra_id);
     CREATE INDEX idx_users_email ON users(email);
     CREATE INDEX idx_users_is_banned ON users(is_banned);
+    CREATE INDEX idx_discord_links_user ON discord_links(user_id);
+    CREATE INDEX idx_discord_links_discord ON discord_links(discord_id);
     CREATE INDEX idx_audit_user ON audit_log(user_id, created_at DESC);
     ```
   - Apply migrations via `wrangler d1 migrations apply AUTH_DB`
@@ -346,7 +356,92 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 3. **Next.js PWA Scaffold**
+- [ ] 3. **Discord Worker Scaffold**
+
+  **What to do**:
+  - Create `discord-worker/` directory with `wrangler.toml`
+  - Initialize Hono server with TypeScript
+  - Configure D1 database (`AUTH_DB`) binding
+  - Configure D1 database (`DOJO_DB`) binding (for subscription check)
+  - Environment variables: `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_VERIFIED_ROLE_ID`, `DISCORD_SUBSCRIBER_ROLE_ID`, `AUTH_WORKER_URL`
+  - Discord worker handles:
+    - Link Discord account to TemanTuton user
+    - Verify user via Discord (bot command)
+    - Role management (verified + subscriber)
+    - Sync subscription status to Discord roles
+
+  **Discord Roles**:
+  | Role | Condition |
+  |------|-----------|
+  | **Verified** | Linked Discord + valid TemanTuton account |
+  | **Subscriber** | Active subscription OR within 1-year grace period |
+
+  **Endpoints**:
+  - `POST /api/discord/link` - Link Discord to TemanTuton user (OAuth Discord)
+  - `GET /api/discord/link/status` - Check if Discord linked
+  - `DELETE /api/discord/link` - Unlink Discord account
+  - `POST /api/discord/verify` - Bot verification endpoint
+  - `POST /api/discord/sync/:user_id` - Sync roles for user
+  - `GET /api/discord/health` - Worker health check
+
+  **Must NOT do**:
+  - Implement auth (delegate to auth-worker)
+  - Store Discord tokens (use bot token only)
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: [`typescript`, `cloudflare-workers`, `hono`]
+  - `typescript`: TypeScript throughout
+  - `cloudflare-workers`: Worker deployment
+  - `discord`: Discord API + Bot
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 1, with Tasks 4, 5, 6, 7)
+  - **Blocks**: Tasks 4, 5, 6
+  - **Blocked By**: Tasks 1, 2
+
+  **References**:
+  - `https://discord.com/developers/docs/interactions/application-commands` - Discord Commands
+  - `https://discord.com/developers/docs/resources/guild` - Guild API
+
+  **Acceptance Criteria**:
+  - [ ] discord-worker deploys to Cloudflare Workers
+  - [ ] `/health` returns `{"status":"ok"}`
+  - [ ] Can link Discord account to TemanTuton user
+  - [ ] Can assign "Verified" role on verification
+  - [ ] Can assign "Subscriber" role based on subscription
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Discord Worker health
+    Tool: Bash (curl)
+    Preconditions: Worker deployed
+    Steps:
+      1. curl https://discord-worker.workers.dev/api/discord/health
+    Expected Result: {"status":"ok"}
+    Evidence: .omo/evidence/task-3-health.json
+
+  Scenario: Link Discord to user
+    Tool: Bash (curl)
+    Preconditions: User logged in
+    Steps:
+      1. curl -X POST https://discord-worker.workers.dev/api/discord/link -d '{"discord_id":"123456"}' -H "Cookie: __Host-session=xxx"
+    Expected Result: Discord linked to user
+    Evidence: .omo/evidence/task-3-link.json
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-3-health.json
+  - [ ] task-3-link.json
+
+  **Commit**: YES
+  - Message: `feat(discord): scaffold discord-worker with role management`
+  - Files: `discord-worker/`
+
+---
+
+- [ ] 4. **Next.js PWA Scaffold**
 
   **What to do**:
   - Create `frontend/` directory with Next.js 14 (App Router)
@@ -3296,6 +3391,96 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   - Message: `feat(admin): add financial dashboard`
   - Files: `dojo-worker/src/routes/admin/financial.ts`, `frontend/app/admin/financial/`
   - Pre-commit: `npx tsc --noEmit`
+
+---
+
+- [ ] 37. **Architecture Diagram (Excalidraw)**
+
+  **What to do**:
+  - Create Excalidraw file at `docs/diagrams/temantuton-architecture.excalidraw`
+  - Diagram must include:
+
+  **Workers Section**:
+  - auth-worker (green): Microsoft OAuth, KV Sessions
+  - discord-worker (blue): Verification, Role Management
+  - podcast-worker (red): Audio API, langflow webhook
+  - dojo-worker (orange): PDF→LLM, Gamification
+  - admin-worker (purple): User Mgmt, Pricing, Dashboard
+  - payment-worker (cyan): QRIS (Louvin + QRIS.PW)
+
+  **Storage Section**:
+  - Cloudflare D1: AUTH_DB, PODCAST_DB, DOJO_DB
+  - Cloudflare R2: temantuton-audio, temantuton-avatars, dojo-pdfs, dojo-markdown
+  - Cloudflare KV: SESSION_KV
+
+  **External Services**:
+  - Microsoft Entra ID
+  - Discord API + Bot
+  - Louvin (Primary QRIS)
+  - QRIS.PW (Backup QRIS)
+  - databyte-m1 (LLM)
+  - Langflow (n2n)
+
+  **Data Flow**:
+  - User → Frontend (Next.js PWA)
+  - Frontend → All Workers (REST API)
+  - Workers ↔ D1/R2/KV
+  - Discord Worker ↔ Discord API
+  - Payment Worker ↔ Louvin / QRIS.PW
+  - Dojo Worker ↔ databyte-m1
+
+  **Use shapes**:
+  - Rectangles for workers/services
+  - Lines/arrows for connections
+  - Group boxes for D1/R2/KV
+  - Color-code by function
+
+  **Must NOT do**:
+  - Use low-res/exported images
+  - Include API keys or secrets
+
+  **Recommended Agent Profile**:
+  - **Category**: `writing`
+  - **Skills**: [`documentation`]
+  - Create Excalidraw JSON format manually
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES
+  - **Blocks**: None
+  - **Blocked By**: None
+
+  **References**:
+  - `https://excalidraw.com/` - Excalidraw tool
+  - See plan TL;DR for full architecture
+
+  **Acceptance Criteria**:
+  - [ ] File created at `docs/diagrams/temantuton-architecture.excalidraw`
+  - [ ] All 6 workers depicted
+  - [ ] All D1 databases labeled
+  - [ ] All R2 buckets labeled
+  - [ ] External services shown
+  - [ ] Data flow arrows present
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Excalidraw file exists and valid
+    Tool: Read
+    Preconditions: None
+    Steps:
+      1. Read docs/diagrams/temantuton-architecture.excalidraw
+    Expected Result: Valid JSON with "elements" array
+    Failure Indicators: File not found, invalid JSON
+    Evidence: .omo/evidence/task-37-diagram.json
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-37-diagram.json
+
+  **Commit**: YES
+  - Message: `docs: add TemanTuton architecture diagram`
+  - Files: `docs/diagrams/temantuton-architecture.excalidraw`
+  - Pre-commit: None
 
 ---
 
