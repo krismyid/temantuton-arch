@@ -2059,6 +2059,12 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       - type="single": PILIH SALAH SATU (A, B, C, D) - pertanyaan biasa
       - type="combination": PILIH KOMBINASI (A, B, C, D) - soal型式 tentang 3 pernyataan
 
+      PROPORSI:
+      - Buat TOTAL 60 SOAL
+      - type="single": ~73% (44 soal)
+      - type="combination": ~27% (16 soal)
+      - Proporsi mengikuti contoh-soal-uas.pdf
+
       CATATAN:
       - Penjelasan MAKSIMAL 250 kata
       - Langsung ke inti, tidak berbelit-belit
@@ -2098,9 +2104,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   - databyte-m1 API docs (user to provide)
 
   **Acceptance Criteria**:
-  - [ ] Questions generated from Markdown
+  - [ ] **Exactly 60 questions generated per subject**
   - [ ] Questions in Bahasa Indonesia
-  - [ ] **Both question types generated: type="single" AND type="combination"**
+  - [ ] **Both question types: ~44 single + ~16 combination (73%/27% proportion)**
   - [ ] Correct JSON format
   - [ ] Questions saved to D1 with type field
   - [ ] Source attribution included
