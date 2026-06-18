@@ -2017,9 +2017,10 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
       LANGKAH:
       1. Baca SELURUH konten modul (semua section, bukan hanya latihan)
-      2. Identifikasi section "Latihan", "Latihan Soal", atau soal-soal yang ada
-      3. Buat pertanyaan baru BERDASARKAN materi dari section tersebut
-      4. Tulis penjelasan yang merujuk ke halaman spesifik: "Jawaban A karena... (halaman: 1.12)"
+      2. Identifikasi SEMUA section "Latihan Soal", "Latihan", "Tes Formatif" dalam modul
+      3. SOAL YANG SUDAH ADA: jika ada latihan/tes formatif yang sudah ada, JANGAN bikin ulang soal yang sama
+      4. BUAT SOAL BARU yang berbeda dari yang sudah ada, tapi BERDASARKAN materi yang sama
+      5. Tulis penjelasan yang merujuk ke halaman spesifik: "Jawaban A karena... (halaman: 1.12)"
 
       FORMAT OUTPUT JSON:
       {
@@ -2065,10 +2066,12 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       - type="combination": ~27% (16 soal)
       - Proporsi mengikuti contoh-soal-uas.pdf
 
-      CATATAN:
+      PENTING:
+      - Ambil SEMUA "Latihan Soal Formatif" yang ada di modul sebagai referensi
+      - BIKIN SOAL BARU yang berbeda dari yang sudah ada
+      - Jika Latihan Soal Formatif sudah ada <60, generate sisanya dari materi modul
       - Penjelasan MAKSIMAL 250 kata
       - Langsung ke inti, tidak berbelit-belit
-      - Campurkan type="single" dan type="combination" di setiap kuis
 
       SEMUA KONTEN MODUL:
       {full_markdown_content}
