@@ -1916,7 +1916,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     - Create subject record in D1 with status='pending'
     - Queue processing job
   - Implement processing pipeline:
-    - Use `pdf-parse` or `opendataloader` to extract text
+    - Use `pdf-parse` or `opendataloader` to extract text and images
     - **CRITICAL**: Preserve module-relative page numbers (UT format: X.Y)
       - Each page has footer with module/page indicator (e.g., "1.3", "1.12", "2.5")
       - Extract page number from footer/text, insert as metadata marker
@@ -1932,6 +1932,18 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
         ## Latihan
 
         1. Apa yang dimaksud dengan...
+        ```
+    - **Image handling**:
+      - Extract images from PDF pages
+      - Save images to R2: `images/{subjectId}/{halaman}-{index}.{ext}`
+      - Replace in markdown with: `<!-- GAMBAR: images/1.12-1.png -->`
+      - Example in markdown:
+        ```markdown
+        Lihat diagram berikut:
+
+        <!-- GAMBAR: images/1.12-1.png -->
+
+        Berdasarkan gambar di atas, apa yang dimaksud...
         ```
     - **Extract FULL module content** (all sections, not just latihan)
     - Convert to Markdown format
@@ -1987,11 +1999,22 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       1. curl -X POST https://dojo-worker.workers.dev/api/admin/subjects/test-id/process
     Expected Result: Subject status changes to ready_for_llm
     Evidence: .omo/evidence/task-22-process.json
+
+  Scenario: Images extracted and marked in markdown
+    Tool: Bash (curl)
+    Preconditions: Subject processed
+    Steps:
+      1. Fetch markdown from R2
+      2. Check for `<!-- GAMBAR: images/xxx -->`
+    Expected Result: Markdown contains image markers
+    Failure Indicators: No image markers, images not in R2
+    Evidence: .omo/evidence/task-22-images.json
   ```
 
   **Evidence to Capture**:
   - [ ] task-22-upload.json
   - [ ] task-22-process.json
+  - [ ] task-22-images.json
 
   **Commit**: YES
   - Message: `feat(dojo): add PDF upload and OpenDataLoader pipeline`
@@ -2074,6 +2097,8 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       - Ambil SEMUA "Latihan Soal Formatif" yang ada di modul sebagai referensi
       - BIKIN SOAL BARU yang berbeda dari yang sudah ada
       - Generate sesuai jumlah berdasarkan proporsi 73%/27%
+      - Jika ada referensi gambar `<!-- GAMBAR: xxx -->` dalam materi, SEBUTKAN dalam penjelasan
+      - Contoh: "Sesuai gambar 1.12-1, jawaban A adalah..."
       - Penjelasan MAKSIMAL 250 kata
       - Langsung ke inti, tidak berbelit-belit
 
@@ -2118,6 +2143,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   - [ ] Questions saved to D1 with type field
   - [ ] Source attribution included
   - [ ] Page references in explanations
+  - [ ] Images extracted to R2 with markers in markdown
 
   **QA Scenarios**:
 
