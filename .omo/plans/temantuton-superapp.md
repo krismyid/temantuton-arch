@@ -2,17 +2,19 @@
 
 ## TL;DR
 
-> **Quick Summary**: Build TemanTuton superapp for Universitas Terbuka students — Microsoft OAuth SSO (auth-worker), Podcast feature (podcast-worker), and gamified Dojo exam prep (dojo-worker) on Cloudflare infra, Next.js PWA frontend.
+> **Quick Summary**: Build TemanTuton superapp for Universitas Terbuka students — Microsoft OAuth SSO (auth-worker), Podcast feature (podcast-worker), gamified Dojo exam prep (dojo-worker), admin panel (admin-worker), and QRIS payment (payment-worker) on Cloudflare infra, Next.js PWA frontend.
 >
 > **Deliverables**:
-> - auth-worker: Microsoft OAuth BFF with KV sessions, D1 user store
-> - podcast-worker: Podcast CRUD API, backoffice admin, langflow webhook
-> - dojo-worker: PDF→LLM question pipeline, gamification engine
-> - Next.js PWA: Mobile-web compatible, offline support (256MB audio cache)
+> - **auth-worker**: Microsoft OAuth BFF with KV sessions, D1 user store
+> - **podcast-worker**: Podcast CRUD API, langflow webhook, R2 audio storage
+> - **dojo-worker**: PDF→LLM question pipeline, gamification engine, quiz logic
+> - **admin-worker**: User management (ban/unban), podcast admin, subject admin, pricing, financial dashboard
+> - **payment-worker**: QRIS payment (Louvin primary, QRIS.PW secondary)
+> - **Next.js PWA**: Mobile-web compatible, offline support (256MB audio cache)
 >
-> **Estimated Effort**: XL (50+ tasks)
+> **Estimated Effort**: XL (36 tasks)
 > **Parallel Execution**: YES — 4 waves
-> **Critical Path**: Auth Worker → D1 Schema → SSO Middleware → Podcast API → Dojo Pipeline
+> **Critical Path**: Auth Worker → D1 Schema → SSO Middleware → Podcast/Dojo Features
 
 ---
 
@@ -24,10 +26,12 @@ Build TemanTuton superapp for UT students. Unofficial. SSO via Microsoft OAuth r
 ### Interview Summary
 **Key Discussions**:
 - Microsoft OAuth + Azure AD tenant restriction + claim filter for domain validation
-- Cloudflare infra: separate Workers per feature (auth-worker, podcast-worker, dojo-worker), D1, R2, KV
+- Cloudflare infra: 5 separate Workers (auth, podcast, dojo, admin, payment), D1, R2, KV
 - Fresh Next.js PWA, web-only, mobile-web compatible, offline support
-- Podcast: rebuild from demo, backoffice admin UI, API for langflow/n2n
+- Podcast: rebuild from demo, API for langflow/n2n
 - Dojo: PDF→OpenDataLoader→Markdown→databyte-m1 LLM→questions, Bahasa Indonesia 20s style, gamification (XP/badges/streaks/levels)
+- Admin: user management (ban/unban/search), pricing management, financial dashboard
+- Payment: QRIS (Louvin primary, QRIS.PW secondary), 1 year free then subscription
 - PDF from UT ebook reader, latihan soal section only, attribute source
 - Session TTL: 30d absolute
 - Audio cache: 256MB/user (~4-8 files)
@@ -71,24 +75,26 @@ Build TemanTuton superapp: SSO + Podcast + Dojo on Cloudflare + Next.js PWA
 - Microsoft OAuth with domain restriction to @ecampus.ut.ac.id
 - BFF pattern with KV sessions (NOT D1)
 - JWT validation via jose library (NOT MSAL.js)
-- 3 separate Workers (auth, podcast, dojo)
+- 5 separate Workers (auth, podcast, dojo, admin, payment)
 - PWA with service worker
 - Offline podcast audio (256MB limit)
 - Offline dojo (question cache)
-- Backoffice admin UI for podcast management
+- Admin worker: user management (ban/unban/search), pricing, financial dashboard
 - langflow webhook API
 - Gamification: XP, badges, streaks, levels, leaderboard
-- PDF → Markdown → LLM → questions pipeline
+- PDF → Markdown → LLM → questions pipeline (60/80/100 questions)
 - Source attribution for UT materials
+- QRIS payment (Louvin + QRIS.PW redundancy)
+- 1 year free access, then subscription (Rp60k/6mo or Rp100k/1yr)
 
 ### Must NOT Have
 - MSAL.js in Workers (incompatible)
 - Sessions stored in D1 (use KV)
 - Mobile native app (web-only)
-- Payment gateway
 - Official UT affiliation
 - Full PDF distribution
 - LLM calls from client-side code
+- Single payment provider (must have redundancy)
 
 ---
 
@@ -1188,7 +1194,132 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 13. **Podcast Worker Scaffold**
+- [ ] 13. **Admin Worker Scaffold**
+
+  **What to do**:
+  - Create `admin-worker/` directory with `wrangler.toml`
+  - Initialize Hono server with TypeScript
+  - Configure D1 database (`AUTH_DB`) binding (shared)
+  - Configure D1 database (`PODCAST_DB`) binding
+  - Configure D1 database (`DOJO_DB`) binding
+  - Environment variables: `AUTH_WORKER_URL`, `FRONTEND_URL`
+  - Add CORS middleware
+  - Admin worker handles ALL admin operations:
+    - User management (ban/unban/search)
+    - Podcast management
+    - Subject/Dojo management
+    - Pricing management
+    - Financial dashboard data
+
+  **Must NOT do**:
+  - Implement auth (delegate to auth-worker)
+  - Store sessions locally
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: [`typescript`, `cloudflare-workers`, `hono`]
+  - `typescript`: TypeScript throughout
+  - `cloudflare-workers`: Worker deployment
+  - `hono`: Router structure
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 3, with Tasks 14, 15, 16)
+  - **Blocks**: Tasks 14, 15, 16
+  - **Blocked By**: Tasks 1, 3
+
+  **References**:
+  - `https://hono.dev/` - Hono framework
+
+  **Acceptance Criteria**:
+  - [ ] admin-worker deploys to Cloudflare Workers
+  - [ ] `/health` returns `{"status":"ok"}`
+  - [ ] D1 bindings accessible (AUTH_DB, PODCAST_DB, DOJO_DB)
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Admin Worker health
+    Tool: Bash (curl)
+    Preconditions: Worker deployed
+    Steps:
+      1. curl https://admin-worker.workers.dev/health
+    Expected Result: {"status":"ok"}
+    Evidence: .omo/evidence/task-13-health.json
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-13-health.json
+
+  **Commit**: YES
+  - Message: `feat(admin): scaffold admin-worker with D1 bindings`
+  - Files: `admin-worker/`
+
+---
+
+- [ ] 14. **Payment Worker Scaffold**
+
+  **What to do**:
+  - Create `payment-worker/` directory with `wrangler.toml`
+  - Initialize Hono server with TypeScript
+  - Configure D1 database (`DOJO_DB`) binding
+  - Environment variables: `AUTH_WORKER_URL`, `FRONTEND_URL`, `LOUVIN_API_KEY`, `QRISPW_API_KEY`
+  - Add CORS middleware
+  - Payment worker handles ALL payment operations:
+    - QRIS payment creation (Louvin + QRIS.PW)
+    - Payment webhook handling
+    - Payment status check
+    - Provider health check
+  - **PRIMARY: Louvin** (try first)
+  - **SECONDARY: QRIS.PW** (fallback if Louvin fails)
+
+  **Must NOT do**:
+  - Implement auth (delegate to auth-worker)
+  - Store QRIS strings long-term (expire after 24h)
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: [`typescript`, `cloudflare-workers`, `hono`]
+  - `typescript`: TypeScript throughout
+  - `cloudflare-workers`: Worker deployment
+  - `hono`: Router structure
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES (Wave 3, with Tasks 13, 15, 16)
+  - **Blocks**: Tasks 15, 16
+  - **Blocked By**: Tasks 1, 3
+
+  **References**:
+  - `https://hono.dev/` - Hono framework
+  - `https://louvin.dev/` - Louvin docs
+  - `https://qris.pw/` - QRIS.PW docs
+
+  **Acceptance Criteria**:
+  - [ ] payment-worker deploys to Cloudflare Workers
+  - [ ] `/health` returns `{"status":"ok"}`
+  - [ ] D1 binding accessible (DOJO_DB)
+
+  **QA Scenarios**:
+
+  ```
+  Scenario: Payment Worker health
+    Tool: Bash (curl)
+    Preconditions: Worker deployed
+    Steps:
+      1. curl https://payment-worker.workers.dev/health
+    Expected Result: {"status":"ok"}
+    Evidence: .omo/evidence/task-14-health.json
+  ```
+
+  **Evidence to Capture**:
+  - [ ] task-14-health.json
+
+  **Commit**: YES
+  - Message: `feat(payment): scaffold payment-worker with Louvin + QRIS.PW`
+  - Files: `payment-worker/`
+
+---
+
+- [ ] 15. **Podcast Worker Scaffold**
 
   **What to do**:
   - Create `podcast-worker/` directory with `wrangler.toml`
@@ -1245,7 +1376,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 14. **Podcast D1 Schema + Migrations**
+- [ ] 16. **Podcast D1 Schema + Migrations**
 
   **What to do**:
   - Create D1 migration:
@@ -1335,7 +1466,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 15. **Podcast CRUD API Endpoints**
+- [ ] 17. **Podcast CRUD API Endpoints**
 
   **What to do**:
   - Implement authenticated API endpoints:
@@ -1419,7 +1550,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 16. **R2 Audio Upload + Streaming**
+- [ ] 18. **R2 Audio Upload + Streaming**
 
   **What to do**:
   - Implement audio upload endpoint (`POST /api/admin/episodes/:id/audio`):
@@ -1493,7 +1624,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 17. **Backoffice Admin UI**
+- [ ] 19. **Backoffice Admin UI**
 
   **What to do**:
   - Create admin pages in `frontend/`:
@@ -1573,7 +1704,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 18. **Podcast Player UI + PWA Audio Cache**
+- [ ] 20. **Podcast Player UI + PWA Audio Cache**
 
   **What to do**:
   - Create podcast player component:
@@ -1666,7 +1797,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 19. **langflow Webhook API**
+- [ ] 21. **langflow Webhook API**
 
   **What to do**:
   - Implement webhook endpoint: `POST /api/webhook/langflow`
@@ -1731,7 +1862,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 20. **Dojo Worker Scaffold**
+- [ ] 22. **Dojo Worker Scaffold**
 
   **What to do**:
   - Create `dojo-worker/` directory with `wrangler.toml`
@@ -1785,7 +1916,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 21. **Dojo D1 Schema + Migrations**
+- [ ] 23. **Dojo D1 Schema + Migrations**
 
   **What to do**:
   - Create D1 migrations:
@@ -1953,7 +2084,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 22. **PDF Upload + OpenDataLoader Pipeline**
+- [ ] 24. **PDF Upload + OpenDataLoader Pipeline**
 
   **What to do**:
   - Implement PDF upload endpoint: `POST /api/admin/subjects`
@@ -2069,7 +2200,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 23. **databyte-m1 LLM Integration**
+- [ ] 25. **databyte-m1 LLM Integration**
 
   **What to do**:
   - Implement question generation endpoint: `POST /api/admin/subjects/:id/generate`
@@ -2251,7 +2382,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 24. **Gamification Engine (XP, Badges, Streaks)**
+- [ ] 26. **Gamification Engine (XP, Badges, Streaks)**
 
   **What to do**:
   - Implement XP system:
@@ -2342,7 +2473,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 25. **Leaderboard Endpoint**
+- [ ] 27. **Leaderboard Endpoint**
 
   **What to do**:
   - Implement `/api/dojo/leaderboard` endpoint:
@@ -2414,7 +2545,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 26. **Dojo UI + Offline Mode**
+- [ ] 28. **Dojo UI + Offline Mode**
 
   **What to do**:
   - Create Dojo pages:
@@ -2502,7 +2633,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 27. **Frontend Auth Integration**
+- [ ] 29. **Frontend Auth Integration**
 
   **What to do**:
   - Create auth context (`AuthContext`):
@@ -2582,7 +2713,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 28. **Home Dashboard + Navigation**
+- [ ] 30. **Home Dashboard + Navigation**
 
   **What to do**:
   - Create home page (`/`):
@@ -2659,7 +2790,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 29. **Subscription & Access Control**
+- [ ] 31. **Subscription & Access Control**
 
   **What to do**:
   - Implement access control logic:
@@ -2729,7 +2860,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 30. **QRIS Payment Integration (Redundant)**
+- [ ] 32. **QRIS Payment Integration (Redundant)**
 
   **What to do**:
   - Implement payment creation endpoint: `POST /api/payments/create`
@@ -2853,7 +2984,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 31. **Subscription Page UI**
+- [ ] 33. **Subscription Page UI**
 
   **What to do**:
   - Create `/subscription` page:
@@ -2928,7 +3059,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 32. **Admin User Management**
+- [ ] 34. **Admin User Management**
 
   **What to do**:
   - Implement user management endpoints:
@@ -3005,7 +3136,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 33. **Admin User Management UI + Pricing**
+- [ ] 35. **Admin User Management UI + Pricing**
 
   **What to do**:
   - Create admin user management page: `/admin/users`
@@ -3083,7 +3214,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 34. **Financial Dashboard**
+- [ ] 36. **Financial Dashboard**
 
   **What to do**:
   - Create financial overview page: `/admin/financial`
