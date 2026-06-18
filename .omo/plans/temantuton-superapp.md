@@ -1932,8 +1932,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
         1. Apa yang dimaksud dengan...
         ```
+    - **Extract FULL module content** (all sections, not just latihan)
     - Convert to Markdown format
-    - Save Markdown to R2: `markdown/{subjectId}/{filename}.md`
+    - Save full Markdown to R2: `markdown/{subjectId}/{filename}.md`
     - Update subject status='ready_for_llm'
   - Implement `POST /api/admin/subjects/:id/process` endpoint:
     - Manually trigger processing
@@ -2007,19 +2008,23 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     - Use regex or LLM to identify section
     - If no section found, return error with guidance
   - Generate questions using databyte-m1:
+    - **CRITICAL**: LLM needs FULL markdown content for context (not just latihan soal)
     - **CRITICAL**: Preserve page references from markdown (marked with `<!-- HALAMAN X.Y -->`)
     - Prompt template:
       ```
-      Dari teks berikut (bagian latihan soal), buat 5 soal pilihan ganda dalam Bahasa Indonesia dengan gaya 20 detik, tidak berbelit-belit.
+      Kamu adalah guru yang membuat soal latihan untuk mahasiswa.
 
-      FORMAT PENTING: Setiap soal HARUS menyertakan nomor halaman sumber dari marker <!-- HALAMAN X.Y --> dalam format: "halaman: X.Y"
-      Contoh explanation: "Jawaban A benar karena... (halaman: 1.12)"
+      LANGKAH:
+      1. Baca SELURUH konten modul di bawah (semua section, bukan hanya latihan)
+      2. Identifikasi section "Latihan", "Latihan Soal", atau soal-soal yang ada
+      3. Buat pertanyaan baru BERDASARKAN materi dari section tersebut
+      4. Tulis penjelasan yang merujuk ke halaman spesifik: "Jawaban A karena... (halaman: 1.12)"
 
-      Format output JSON:
+      FORMAT OUTPUT JSON:
       {
         "questions": [
           {
-            "question": "...",
+            "question": "Pertanyaan dalam Bahasa Indonesia...",
             "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
             "correct_answer": "A",
             "explanation": "Penjelasan singkat... (halaman: 1.12)",
@@ -2029,9 +2034,11 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
         ]
       }
 
-      Teks sumber:
-      {markdown_content}
+      SEMUA KONTEN MODUL:
+      {full_markdown_content}
       ```
+    - **IMPORTANT**: Load and send full markdown content to LLM (all sections for context)
+    - LLM should understand full material before generating questions from latihan section
     - Parse LLM response as JSON
     - Validate response format (must have `source_page` for each question)
     - Save questions to D1 (include `source_page` column)
