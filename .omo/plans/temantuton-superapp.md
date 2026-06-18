@@ -148,9 +148,6 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-## TODOs
-
----
 
 ## TODOs
 
@@ -1808,6 +1805,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       explanation TEXT NOT NULL,
       difficulty TEXT DEFAULT 'medium',
       source_section TEXT,
+      source_page INTEGER,  -- Page number from PDF for reference
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -1918,6 +1916,22 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     - Queue processing job
   - Implement processing pipeline:
     - Use `pdf-parse` or `opendataloader` to extract text
+    - **CRITICAL**: Preserve page numbers as metadata in Markdown:
+      - Format: `<!-- PAGE 5 -->`
+      - Each page break marked, content organized accordingly
+      - Example:
+        ```markdown
+        # Chapter 1: Pengantar Hukum
+
+        <!-- PAGE 1 -->
+        Hukum adalah...
+
+        <!-- PAGE 2 -->
+        Sejarah hukum Indonesia...
+
+        <!-- PAGE 15: Latihan Soal -->
+        1. Apa yang dimaksud dengan...
+        ```
     - Convert to Markdown format
     - Save Markdown to R2: `markdown/{subjectId}/{filename}.md`
     - Update subject status='ready_for_llm'
@@ -1949,6 +1963,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
   **Acceptance Criteria**:
   - [ ] PDF uploads to R2
   - [ ] Text extracted and converted to Markdown
+  - [ ] **Page numbers preserved as `<!-- PAGE N -->` markers**
   - [ ] Subject status updated correctly
   - [ ] Markdown stored in R2
 
@@ -1992,9 +2007,13 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
     - Use regex or LLM to identify section
     - If no section found, return error with guidance
   - Generate questions using databyte-m1:
+    - **CRITICAL**: Preserve page references from markdown (marked with `<!-- PAGE N -->`)
     - Prompt template:
       ```
       Dari teks berikut (bagian latihan soal), buat 5 soal pilihan ganda dalam Bahasa Indonesia dengan gaya 20 detik, tidak berbelit-belit.
+
+      FORMAT PENTING: Setiap soal HARUS menyertakan nomor halaman sumber dalam format: "page: N"
+      Contoh explanation: "Jawaban A benar karena... (page: 15)"
 
       Format output JSON:
       {
@@ -2003,8 +2022,9 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
             "question": "...",
             "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
             "correct_answer": "A",
-            "explanation": "Penjelasan singkat...",
-            "difficulty": "medium"
+            "explanation": "Penjelasan singkat... (page: N)",
+            "difficulty": "medium",
+            "source_page": N
           }
         ]
       }
@@ -2013,8 +2033,8 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       {markdown_content}
       ```
     - Parse LLM response as JSON
-    - Validate response format
-    - Save questions to D1
+    - Validate response format (must have `source_page` for each question)
+    - Save questions to D1 (include `source_page` column)
     - Update subject status='completed'
   - Implement retry logic (3 attempts on failure)
   - Source attribution:
@@ -2064,11 +2084,21 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
       1. wrangler d1 execute DOJO_DB --command="SELECT question_text FROM questions LIMIT 1"
     Expected Result: Question text contains Indonesian characters, no English
     Evidence: .omo/evidence/task-23-language.json
+
+  Scenario: Questions include page references
+    Tool: Bash (curl)
+    Preconditions: Questions generated
+    Steps:
+      1. wrangler d1 execute DOJO_DB --command="SELECT explanation, source_page FROM questions"
+    Expected Result: Every explanation contains "(page: N)" and source_page is not null
+    Failure Indicators: Missing "(page: N)" in explanation, NULL source_page
+    Evidence: .omo/evidence/task-23-page-ref.json
   ```
 
   **Evidence to Capture**:
   - [ ] task-23-generate.json
   - [ ] task-23-language.json
+  - [ ] task-23-page-ref.json
 
   **Commit**: YES
   - Message: `feat(dojo): add databyte-m1 LLM question generation`
