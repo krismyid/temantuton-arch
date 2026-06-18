@@ -157,7 +157,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ## TODOs
 
-- [ ] 1. **Auth Worker scaffold**
+- [x] 1. **Auth Worker scaffold**
 
   **What to do**:
   - Create `auth-worker/` directory with `wrangler.toml`
@@ -242,7 +242,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 2. **D1 Auth Schema + Migrations**
+- [x] 2. **D1 Auth Schema + Migrations**
 
   **What to do**:
   - Create D1 migration files in `auth-worker/migrations/`
@@ -3394,7 +3394,7 @@ Every task includes agent-executed QA scenarios. Evidence saved to `.omo/evidenc
 
 ---
 
-- [ ] 37. **Architecture Diagram (Excalidraw)**
+- [x] 37. **Architecture Diagram (Excalidraw)**
 
   **What to do**:
   - Create Excalidraw file at `docs/diagrams/temantuton-architecture.excalidraw`

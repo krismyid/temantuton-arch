@@ -1,0 +1,6 @@
+MICROSOFT_CLIENT_ID=your-client-id
+MICROSOFT_CLIENT_SECRET=your-client-secret
+AZURE_TENANT_ID=your-tenant-id
+REDIRECT_URI=http://localhost:8787/auth/callback
+FRONTEND_URL=http://localhost:3000
+SESSION_SECRET=random-32-char-secret
